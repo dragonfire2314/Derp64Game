@@ -54,7 +54,7 @@ AR        := mips-n64-ar
 OBJDUMP   := mips-n64-objdump
 OBJCOPY   := mips-n64-objcopy
 
-INCLUDE_DIRS += /usr/include/n64 include $(BUILD_DIR) $(BUILD_DIR)/include src .
+INCLUDE_DIRS += /usr/include/n64 include $(BUILD_DIR) $(BUILD_DIR)/include src . assets
 
 C_DEFINES := $(foreach d,$(DEFINES),-D$(d))
 DEF_INC_CFLAGS := $(foreach i,$(INCLUDE_DIRS),-I$(i)) $(C_DEFINES)

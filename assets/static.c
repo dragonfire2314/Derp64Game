@@ -45,7 +45,27 @@ Gfx clearframebuffer_dl[] = {
     gsDPSetColorImage(G_IM_FMT_RGBA, G_IM_SIZ_16b, SCREEN_WIDTH, rsp_cfb),
     gsDPSetFillColor(GPACK_RGBA5551(64,64,255,1) << 16 | 
 		     GPACK_RGBA5551(64,64,255,1)),
-    gsDPFillRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT),
+    gsDPFillRectangle(0, 0, SCREEN_WIDTH-1, SCREEN_HEIGHT-1),
+    gsDPPipeSync(),
+    gsSPEndDisplayList(),
+};
+
+Gfx sprite_dl[] = {
+    gsDPPipeSync(),
+    gsDPSetTexturePersp(G_TP_NONE),
+    gsDPSetCycleType(G_CYC_COPY),
+    gsDPSetRenderMode(G_RM_XLU_SURF, G_RM_XLU_SURF2),
+    gsSPClearGeometryMode(G_SHADE | G_SHADING_SMOOTH),
+    gsSPTexture(0x2000, 0x2000, 0, G_TX_RENDERTILE, G_ON),
+    gsDPSetCombineMode(G_CC_DECALRGB, G_CC_DECALRGB),
+    gsDPSetTexturePersp(G_TP_NONE),
+    gsDPSetTextureFilter(G_TF_POINT),
+    gsDPLoadTextureBlock(pumpkin, G_IM_FMT_RGBA, G_IM_SIZ_16b, 32, 32,
+                         0, G_TX_NOMIRROR, G_TX_NOMIRROR, 0, 0,
+                         G_TX_NOLOD, G_TX_NOLOD),
+    gsSPTextureRectangle(40 << 2, 10 << 2, (40 + 32 - 1) << 2,
+                         (10 + 32 - 1) << 2, 0, 0, 0, 4 << 10,
+                         1 << 10),
     gsDPPipeSync(),
     gsSPEndDisplayList(),
 };

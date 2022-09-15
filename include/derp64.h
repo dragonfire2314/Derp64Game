@@ -11,7 +11,19 @@
 #define	SP_DRAM_STACK_SIZE8	(1024)
 #define	SP_DRAM_STACK_SIZE64	(SP_DRAM_STACK_SIZE8 >> 3)
 
+//Function defines
+// void renderer();
+
+
 #ifdef _LANGUAGE_C
+
+typedef struct {
+	Mtx	projection;
+	Mtx	modeling;
+	Mtx	viewing;
+    Mtx identity;
+} Dynamic;
+extern Dynamic dynamic;
 
 extern u64 dram_stack[];	/* used for matrix stack */
 extern u64 rdp_output[];	/* RSP writes back RDP data */
@@ -20,6 +32,14 @@ extern u64 rdp_output[];	/* RSP writes back RDP data */
 extern Gfx 	rspinit_dl[];
 extern Gfx 	rdpinit_dl[];
 extern Gfx	clearframebuffer_dl[];
+
+extern Gfx shadetri_dl[];
+
+extern Gfx sprite_dl[];
+extern Gfx cube_dl[];
+
+extern Vtx cube_vertex[];
+extern u16 pumpkin[];
 
 /* CPU addresses for the color frame buffer */
 

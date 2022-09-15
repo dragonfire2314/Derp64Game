@@ -1,6 +1,8 @@
 #include <ultra64.h>
 
 #include "derp64.h"
+#include "pumpkin.h"
+#include "cube.h"
 
 /*
  * Symbol genererated by "make" to indicate the end of the code segment
@@ -65,6 +67,16 @@ OSTask	tlist =
 Gfx glist[2048];
 
 
+struct graphics {
+    Mtx projection;
+    Mtx camera;
+    Mtx model;
+    Mtx rotate_y;
+    Mtx rotate_x;
+};
+
+struct graphics gr;
+
 // static OSTask tlist = {{
 //     .type = M_GFXTASK,
 //     .flags = OS_TASK_DP_WAIT,
@@ -77,6 +89,7 @@ Gfx glist[2048];
 // }};
 
 static int      draw_buffer = 0;
+static float	theta = 0.0;
 
 void boot() 
 {
@@ -114,6 +127,8 @@ static void idle(void *arg)
 
     for(;;);
 }
+
+Dynamic dynamic;
 
 static void run(void *arg) 
 {
@@ -168,6 +183,15 @@ static void run(void *arg)
 
         Gfx *glistp = glist;
 
+        Dynamic	*dynamicp;
+        dynamicp = &dynamic;
+
+        guOrtho(&dynamicp->projection,
+            -(float)SCREEN_WIDTH/2.0F, (float)SCREEN_WIDTH/2.0F, 
+            -(float)SCREEN_HEIGHT/2.0F, (float)SCREEN_HEIGHT/2.0F,
+            1.0F, 10.0F, 1.0F);
+	    guRotate(&dynamicp->modeling, theta, 0.0F, 0.0F, 1.0F);
+
         gSPSegment(glistp++, 0, 0x0);	/* Physical address segment */
 	    gSPSegment(glistp++, STATIC_SEGMENT, OS_K0_TO_PHYSICAL(staticSegment));
 	    gSPSegment(glistp++, CFB_SEGMENT, OS_K0_TO_PHYSICAL(cfb[draw_buffer]));
@@ -176,6 +200,20 @@ static void run(void *arg)
         gSPDisplayList(glistp++, rspinit_dl);
 
         gSPDisplayList(glistp++, clearframebuffer_dl);
+
+        gSPDisplayList(glistp++, sprite_dl);
+
+
+        
+
+        
+        // gSPDisplayList(glistp++, shadetri_dl);
+
+
+
+
+
+
         gDPFullSync(glistp++);
         gSPEndDisplayList(glistp++);
 
@@ -185,6 +223,9 @@ static void run(void *arg)
 
         osSpTaskStart(&tlist);
         osRecvMesg(&rdpMessageQ, NULL, OS_MESG_BLOCK);
+
+        //Print a Image
+        
 
         /* setup to swap buffers */
         osViSwapBuffer(cfb[draw_buffer]);
