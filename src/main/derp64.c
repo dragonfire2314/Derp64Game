@@ -29,86 +29,54 @@ static u64	mainThreadStack[STACKSIZE/sizeof(u64)];
 
 OSPiHandle	*handler;
 
-OSMesgQueue	rdpMessageQ;
-OSMesg		rdpMessageBuf;
+/* this number (the depth of the message queue) needs to be equal
+ * to the maximum number of possible overlapping PI requests.
+ */
+#define NUM_PI_MSGS     8
 
-// OSTask	tlist =
-// {
-//     M_GFXTASK,			/* task type */
-//     OS_TASK_DP_WAIT,		/* task flags */
-//     NULL,			/* boot ucode pointer (fill in later) */
-//     0,				/* boot ucode size (fill in later) */
-//     NULL,			/* task ucode pointer (fill in later) */
-//     SP_UCODE_SIZE,		/* task ucode size */
-//     NULL,			/* task ucode data pointer (fill in later) */
-//     SP_UCODE_DATA_SIZE,		/* task ucode data size */
-//     &dram_stack[0],		/* task dram stack pointer */
-//     SP_DRAM_STACK_SIZE8,	/* task dram stack size */
-//     &rdp_output[0],		/* task fifo buffer start ptr */
-//     &rdp_output[0]+RDP_OUTPUT_LEN, /* task fifo buffer end ptr */
-//     NULL,			/* task data pointer (fill in later) */
-//     0,				/* task data size (fill in later) */
-//     NULL,			/* task yield buffer ptr (not used here) */
-//     0				/* task yield buffer size (not used here) */
-// };
+static OSMesg PiMessages[NUM_PI_MSGS];
+static OSMesgQueue PiMessageQ;
 
-enum {
-  SP_STACK_SIZE = 1024,
+
+OSMesgQueue	dmaMessageQ, rdpMessageQ, retraceMessageQ;
+OSMesg		dmaMessageBuf, rdpMessageBuf, retraceMessageBuf;
+OSIoMesg	dmaIOMessageBuf;
+
+OSTask	tlist =
+{
+    M_GFXTASK,			/* task type */
+    OS_TASK_DP_WAIT,		/* task flags */
+    NULL,			/* boot ucode pointer (fill in later) */
+    0,				/* boot ucode size (fill in later) */
+    NULL,			/* task ucode pointer (fill in later) */
+    SP_UCODE_SIZE,		/* task ucode size */
+    NULL,			/* task ucode data pointer (fill in later) */
+    SP_UCODE_DATA_SIZE,		/* task ucode data size */
+    &dram_stack[0],		/* task dram stack pointer */
+    SP_DRAM_STACK_SIZE8,	/* task dram stack size */
+    &rdp_output[0],		/* task fifo buffer start ptr */
+    &rdp_output[0]+RDP_OUTPUT_LEN, /* task fifo buffer end ptr */
+    NULL,			/* task data pointer (fill in later) */
+    0,				/* task data size (fill in later) */
+    NULL,			/* task yield buffer ptr (not used here) */
+    0				/* task yield buffer size (not used here) */
 };
 
-static u64 sp_dram_stack[SP_STACK_SIZE / 8]
-    __attribute__((align(16)));
+Gfx glist[2048];
 
 
-static OSTask tlist = {{
-    .type = M_GFXTASK,
-    .flags = OS_TASK_DP_WAIT,
-    .ucode = (u64 *)gspF3DEX2_xbusTextStart,
-    .ucode_size = SP_UCODE_SIZE,
-    .ucode_data = (u64 *)gspF3DEX2_xbusDataStart,
-    .ucode_data_size = SP_UCODE_DATA_SIZE,
-    .dram_stack = sp_dram_stack,
-    .dram_stack_size = sizeof(sp_dram_stack),
-}};
+// static OSTask tlist = {{
+//     .type = M_GFXTASK,
+//     .flags = OS_TASK_DP_WAIT,
+//     .ucode = (u64 *)gspF3DEX2_xbusTextStart,
+//     .ucode_size = SP_UCODE_SIZE,
+//     .ucode_data = (u64 *)gspF3DEX2_xbusDataStart,
+//     .ucode_data_size = SP_UCODE_DATA_SIZE,
+//     .dram_stack = sp_dram_stack,
+//     .dram_stack_size = sizeof(sp_dram_stack),
+// }};
 
-// Viewport scaling parameters.
-Vp vp = {{
-    .vscale = {SCREEN_WIDTH * 2, SCREEN_HEIGHT * 2, G_MAXZ / 2, 0},
-    .vtrans = {SCREEN_WIDTH * 2, SCREEN_HEIGHT * 2, G_MAXZ / 2, 0},
-}};
-
-// Initialize the RSP.
-Gfx rspinit_dl[] = {
-    gsSPViewport(&vp),
-    gsSPClearGeometryMode(G_SHADE | G_SHADING_SMOOTH | G_CULL_BOTH |
-                          G_FOG | G_LIGHTING | G_TEXTURE_GEN |
-                          G_TEXTURE_GEN_LINEAR | G_LOD),
-    gsSPTexture(0, 0, 0, 0, G_OFF),
-    gsSPEndDisplayList(),
-};
-
-// Initialize the RDP.
-Gfx rdpinit_dl[] = { 
-    gsDPSetCycleType(G_CYC_1CYCLE),
-    gsDPSetScissor(G_SC_NON_INTERLACE, 0, 0, SCREEN_WIDTH,
-                   SCREEN_HEIGHT),
-    gsDPSetCombineKey(G_CK_NONE),
-    gsDPSetAlphaCompare(G_AC_NONE),
-    gsDPSetRenderMode(G_RM_NOOP, G_RM_NOOP2),
-    gsDPSetColorDither(G_CD_DISABLE),
-    gsDPPipeSync(),
-    gsSPEndDisplayList(),
-};
-
-// Clear the color framebuffer.
-Gfx clearframebuffer_dl[] = {
-    gsDPSetCycleType(G_CYC_FILL),
-    gsDPSetColorImage(G_IM_FMT_RGBA, G_IM_SIZ_16b, SCREEN_WIDTH, rsp_cfb),
-    gsDPPipeSync(),
-    gsDPSetFillColor(GPACK_RGBA5551(255,0,0,1)<<16 | GPACK_RGBA5551(255,0,0,1)),
-    gsDPFillRectangle(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1),
-    gsSPEndDisplayList(),
-};
+static int      draw_buffer = 0;
 
 void boot() 
 {
@@ -127,6 +95,12 @@ static void idle(void *arg)
     osViSetMode(&osViModeTable[OS_VI_NTSC_LAN1]);
     
     /*
+     * Start PI Mgr for access to cartridge
+     */
+    osCreatePiManager((OSPri)OS_PRIORITY_PIMGR, &PiMessageQ, PiMessages, 
+		      NUM_PI_MSGS);
+
+    /*
      * Create main thread
      */
     osCreateThread(&mainThread, 3, run, NULL,
@@ -143,11 +117,46 @@ static void idle(void *arg)
 
 static void run(void *arg) 
 {
+    char *staticSegment;
+    OSTask *tlistp;
+
+    /*
+     * Setup the message queues
+     */
+    osCreateMesgQueue(&dmaMessageQ, &dmaMessageBuf, 1);
+    
     osCreateMesgQueue(&rdpMessageQ, &rdpMessageBuf, 1);
     osSetEventMesg(OS_EVENT_DP, &rdpMessageQ, NULL);
+    
+    osCreateMesgQueue(&retraceMessageQ, &retraceMessageBuf, 1);
+    osViSetEvent(&retraceMessageQ, NULL, 1);
+    
+    /*
+     * Stick the static segment right after the code/data segment
+     */
+    staticSegment = _codeSegmentBssEnd;
+
+    dmaIOMessageBuf.hdr.pri      = OS_MESG_PRI_NORMAL;
+    dmaIOMessageBuf.hdr.retQueue = &dmaMessageQ;
+    dmaIOMessageBuf.dramAddr     = staticSegment;
+    dmaIOMessageBuf.devAddr      = (u32)_staticSegmentRomStart;
+    dmaIOMessageBuf.size         = (u32)_staticSegmentRomEnd-(u32)_staticSegmentRomStart;
+
+    osEPiStartDma(handler, &dmaIOMessageBuf, OS_READ);
+    
+    /*
+     * Wait for DMA to finish
+     */
+    (void)osRecvMesg(&dmaMessageQ, NULL, OS_MESG_BLOCK);
+
+
+
 
     tlist.t.ucode_boot = (u64*)rspbootTextStart;
     tlist.t.ucode_boot_size = (u32)rspbootTextEnd - (u32)rspbootTextStart;
+
+    tlist.t.ucode = (u64 *) gspF3DEX2_xbusTextStart;
+	tlist.t.ucode_data = (u64 *) gspF3DEX2_xbusDataStart;
     
     // for (int i = 0; i < 10000; i++) {
     //     rsp_cfb[i] = 0x444F; 
@@ -155,21 +164,39 @@ static void run(void *arg)
 
     while (1) 
     {
-        Gfx glist[16], *glistp = glist;
-        gSPSegment(glistp++, 0, 0);
+        tlistp = &tlist;
+
+        Gfx *glistp = glist;
+
+        gSPSegment(glistp++, 0, 0x0);	/* Physical address segment */
+	    gSPSegment(glistp++, STATIC_SEGMENT, OS_K0_TO_PHYSICAL(staticSegment));
+	    gSPSegment(glistp++, CFB_SEGMENT, OS_K0_TO_PHYSICAL(cfb[draw_buffer]));
+
         gSPDisplayList(glistp++, rdpinit_dl);
         gSPDisplayList(glistp++, rspinit_dl);
-        clearframebuffer_dl[1] = (Gfx)gsDPSetColorImage(G_IM_FMT_RGBA, G_IM_SIZ_16b, SCREEN_WIDTH, rsp_cfb);
+
         gSPDisplayList(glistp++, clearframebuffer_dl);
         gDPFullSync(glistp++);
         gSPEndDisplayList(glistp++);
 
-        osWritebackDCache(&clearframebuffer_dl[1], sizeof(Gfx) * 3);
         osWritebackDCache(glist, sizeof(*glist) * (glistp - glist));
         tlist.t.data_ptr = (u64 *)glist;
         tlist.t.data_size = sizeof(*glist) * (glistp - glist);
 
         osSpTaskStart(&tlist);
         osRecvMesg(&rdpMessageQ, NULL, OS_MESG_BLOCK);
+
+        /* setup to swap buffers */
+        osViSwapBuffer(cfb[draw_buffer]);
+
+        /* Make sure there isn't an old retrace in queue 
+        * (assumes queue has a depth of 1) 
+        */
+        if (MQ_IS_FULL(&retraceMessageQ))
+            (void)osRecvMesg(&retraceMessageQ, NULL, OS_MESG_BLOCK);
+        
+        /* Wait for Vertical retrace to finish swap buffers */
+        (void)osRecvMesg(&retraceMessageQ, NULL, OS_MESG_BLOCK);
+        draw_buffer ^= 1;
     }
 }

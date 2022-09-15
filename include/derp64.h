@@ -13,13 +13,13 @@
 
 #ifdef _LANGUAGE_C
 
-// extern u64 sp_dram_stack[];	/* used for matrix stack */
+extern u64 dram_stack[];	/* used for matrix stack */
 extern u64 rdp_output[];	/* RSP writes back RDP data */
 #define RDP_OUTPUT_LEN (4096*16)
 
-// extern Gfx 	rspinit_dl[];
-// extern Gfx 	rdpinit_dl[];
-// extern Gfx	clearframebuffer_dl[];
+extern Gfx 	rspinit_dl[];
+extern Gfx 	rdpinit_dl[];
+extern Gfx	clearframebuffer_dl[];
 
 /* CPU addresses for the color frame buffer */
 
