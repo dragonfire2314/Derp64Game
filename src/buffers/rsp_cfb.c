@@ -7,4 +7,4 @@
 #include <ultra64.h>
 #include "derp64.h"
 
-u16	rsp_cfb[SCREEN_WD*SCREEN_HT];
+u16	rsp_cfb[SCREEN_WIDTH*SCREEN_HEIGHT];
